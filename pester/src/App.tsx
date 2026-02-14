@@ -8,15 +8,7 @@ import { SettingsPage } from "@/components/settings-page";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Menubar,
-  MenubarMenu,
-  MenubarTrigger,
-  MenubarContent,
-  MenubarItem,
-  MenubarSeparator,
-} from "@/components/ui/menubar";
-import { Settings, Users, MessageSquare } from "lucide-react";
+import { Settings } from "lucide-react";
 import {
   isPermissionGranted,
   requestPermission,
@@ -253,30 +245,14 @@ function App() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       {page !== "settings" && page !== "chat" && (
         <Titlebar>
-          <Menubar className="h-7 border-0 bg-transparent shadow-none p-0">
-            <MenubarMenu>
-              <MenubarTrigger className="h-6 px-2 text-xs data-[state=open]:bg-accent">
-                View
-              </MenubarTrigger>
-              <MenubarContent>
-                <MenubarItem onClick={() => setPage("contacts")}>
-                  <Users className="size-4" />
-                  Contacts
-                </MenubarItem>
-                {activeChannelId && (
-                  <MenubarItem onClick={() => setPage("chat")}>
-                    <MessageSquare className="size-4" />
-                    Active Chat
-                  </MenubarItem>
-                )}
-                <MenubarSeparator />
-                <MenubarItem onClick={() => setPage("settings")}>
-                  <Settings className="size-4" />
-                  Settings
-                </MenubarItem>
-              </MenubarContent>
-            </MenubarMenu>
-          </Menubar>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => setPage("settings")}
+            className="hover:bg-muted"
+          >
+            <Settings className="size-3" />
+          </Button>
         </Titlebar>
       )}
 
