@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pester",
+  "productName": "Pester",
   "version": "0.1.0",
   "identifier": "com.suvan.pester",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "pester",
+        "title": "Pester",
         "width": 300,
         "height": 600,
         "decorations": false,
@@ -40,6 +40,40 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "language": "en-US",
+        "license": "LICENSE",
+        "bannerPath": "icons/icon.png",
+        "dialogImagePath": "icons/icon.png",
+        "componentRefs": [
+          "Path"
+        ],
+        "fragmentPaths": [
+          "wix/custom-action.wxs"
+        ]
+      },
+      "nsis": {
+        "license": "../LICENSE",
+        "headerImage": "icons/icon.png",
+        "sidebarImage": "icons/icon.png",
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perUser",
+        "languages": ["English"],
+        "displayLanguageSelector": false,
+        "compressionLevel": "ultra",
+        "customLanguageFiles": {},
+        "template": "nsis/installer.nsi",
+        "startMenuFolder": "Pester"
+      }
+    },
+    "publisher": "Suvan GS",
+    "copyright": "Copyright © 2026 Suvan GS",
+    "shortDescription": "Pester - Fast & simple messaging app",
+    "longDescription": "A lightweight, privacy-focused messaging application built with Tauri and React.",
+    "externalBin": [],
+    "homepage": "https://github.com/greeenboi/Pester",
+    "licenseFile": "../LICENSE"
   }
 }

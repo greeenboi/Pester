@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!-- Custom action to open thank you page after installation -->
+    <CustomAction
+      Id="OpenThankYouPage"
+      BinaryKey="WixCA"
+      DllEntry="WixShellExec"
+      Execute="immediate"
+      Return="ignore"
+      Impersonate="yes" />
+
+    <Property Id="WixShellExecTarget" Value="https://www.suvangs.tech" />
+
+    <InstallExecuteSequence>
+      <!-- Run after installation is complete -->
+      <Custom Action="OpenThankYouPage" After="InstallFinalize">
+        NOT Installed
+      </Custom>
+    </InstallExecuteSequence>
+
+    <!-- UI sequence for when using the UI -->
+    <InstallUISequence>
+      <Custom Action="OpenThankYouPage" After="InstallFinalize">
+        NOT Installed
+      </Custom>
+    </InstallUISequence>
+  </Fragment>
+</Wix>
