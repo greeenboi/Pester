@@ -1,14 +1,31 @@
 # Pester Server
 
-Volatile WebSocket pub/sub messaging broker for Pester.
+Volatile WebSocket pub/sub messaging broker for Pester, built with Node.js and Socket.IO.
 
 ## Running the Server
 
+### Development
+
 ```bash
-node server.js
+npm install
+npm run dev
 ```
 
-The server runs on `ws://localhost:4000`.
+### Production
+
+```bash
+npm install
+npm start
+```
+
+### Docker
+
+```bash
+# From project root
+docker-compose up -d
+```
+
+The server runs on `ws://localhost:4000` (or port specified in `PORT` environment variable).
 
 ## API
 
@@ -119,27 +136,24 @@ Other members receive:
 }
 ```
 
-## Testing
+## Deployment
 
-Run the test suite:
+### Koyeb
+
+This server is ready for deployment on Koyeb:
 
 ```bash
-# Start the server in one terminal
-node server.js
-
-# Run tests in another terminal
-node test-api.js
+koyeb service create pester-server \
+  --git github.com/greeenboi/Pester \
+  --git-branch master \
+  --git-workdir pester_server \
+  --ports 4000:http \
+  --routes /:4000 \
+  --env PORT=4000
 ```
 
-The test suite validates:
+Or use the Koyeb web interface to deploy from your GitHub repository.
 
-- User registration
-- Single-session enforcement (kick previous sessions)
-- Channel opening (online/offline friends)
-- Message sending
-- Typing indicators
-- Channel closing
-- Error handling (invalid JSON, unknown message types, etc.)
-- Disconnect cleanup
+## Protocol
 
-All tests use the WebSocket API and verify server responses.
+The server uses Socket.IO for WebSocket communication but maintains a custom JSON message protocol for compatibility. All messages are sent/received through Socket.IO's `message` event.

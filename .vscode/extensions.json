@@ -1,6 +1,5 @@
 {
     "recommendations": [
-        "denoland.vscode-deno",
         "oven.bun-vscode",
         "dsznajder.es7-react-js-snippets",
         "rust-lang.rust-analyzer",

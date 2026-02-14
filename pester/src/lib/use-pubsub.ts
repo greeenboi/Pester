@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Channel, ChatMessage, ServerMessage } from "./types";
 import TauriWebSocket from "@tauri-apps/plugin-websocket";
 
+// const WS_URL = "wss://boiling-dotti-suvan-gs-f864ace7.koyeb.app";
 const WS_URL = "ws://localhost:4000";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "registered";

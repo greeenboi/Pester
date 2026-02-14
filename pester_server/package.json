@@ -1,0 +1,22 @@
+{
+  "name": "pester-server",
+  "version": "1.0.0",
+  "description": "Pester WebSocket Server with Socket.IO",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "keywords": ["websocket", "socketio", "chat", "pubsub"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "socket.io": "^4.7.5",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+README.md
+*.md
+.vscode
+.idea
+*.test.js
+main.ts
+main_test.ts
+deno.json

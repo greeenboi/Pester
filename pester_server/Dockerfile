@@ -1,21 +1,20 @@
-# Use official Deno image
-FROM denoland/deno:2.6.9
+# Use official Node.js LTS image
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
 
 # Copy dependency files first for better caching
-COPY deno.json .
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
 
 # Copy source files
-COPY main.ts .
-COPY main_test.ts .
-
-# Cache dependencies
-RUN deno cache main.ts
+COPY index.js .
 
 # Expose WebSocket port
 EXPOSE 4000
 
 # Run the server
-CMD ["deno", "run", "--allow-net", "main.ts"]
+CMD ["node", "index.js"]
