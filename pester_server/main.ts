@@ -1,40 +1,38 @@
-console.log("[System] Initializing Pester Server...");
-import { WebSocketServer } from "ws";
+console.log("[System] Initializing Pester Server (Deno)...");
 
 const PORT = 4000;
-const wss = new WebSocketServer({ port: PORT });
 
 // ── In-memory state (volatile — nothing persisted) ──────────────────────────
 /** userId → WebSocket */
-const users = new Map();
+const users = new Map<string, WebSocket>();
 /** channelId → Set<userId> */
-const channels = new Map();
+const channels = new Map<string, Set<string>>();
 
-function makeChannelId(a, b) {
+function makeChannelId(a: string, b: string): string {
   return `chat_${[a, b].sort().join("_")}`;
 }
 
-function broadcast(channelId, message, excludeUserId = null) {
+function broadcast(channelId: string, message: unknown, excludeUserId: string | null = null) {
   const members = channels.get(channelId);
   if (!members) return;
   const payload = JSON.stringify(message);
   for (const uid of members) {
     if (uid === excludeUserId) continue;
     const ws = users.get(uid);
-    if (ws && ws.readyState === 1) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(payload);
     }
   }
 }
 
-function sendTo(userId, message) {
+function sendTo(userId: string, message: unknown) {
   const ws = users.get(userId);
-  if (ws && ws.readyState === 1) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(message));
   }
 }
 
-function removeUserFromAllChannels(userId) {
+function removeUserFromAllChannels(userId: string) {
   for (const [channelId, members] of channels) {
     if (members.has(userId)) {
       members.delete(userId);
@@ -53,14 +51,14 @@ function removeUserFromAllChannels(userId) {
   }
 }
 
-// ── Connection handler ──────────────────────────────────────────────────────
-wss.on("connection", (ws) => {
-  let currentUserId = null;
+// ── WebSocket handler ───────────────────────────────────────────────────────
+function handleWebSocket(ws: WebSocket) {
+  let currentUserId: string | null = null;
 
-  ws.on("message", (raw) => {
-    let msg;
+  ws.onmessage = (event) => {
+    let msg: { type?: string; [key: string]: unknown };
     try {
-      msg = JSON.parse(raw.toString());
+      msg = JSON.parse(event.data);
     } catch {
       ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
       return;
@@ -71,16 +69,18 @@ wss.on("connection", (ws) => {
       case "register": {
         const { userId } = msg;
         if (!userId || typeof userId !== "string") {
-          sendTo(currentUserId, {
-            type: "error",
-            message: "userId is required",
-          });
+          if (currentUserId) {
+            sendTo(currentUserId, {
+              type: "error",
+              message: "userId is required",
+            });
+          }
           return;
         }
 
         // Kick existing session for same userId (single-session)
         if (users.has(userId) && users.get(userId) !== ws) {
-          const old = users.get(userId);
+          const old = users.get(userId)!;
           old.send(
             JSON.stringify({
               type: "kicked",
@@ -114,7 +114,7 @@ wss.on("connection", (ws) => {
           return;
         }
         const { friendId } = msg;
-        if (!friendId || friendId === currentUserId) {
+        if (!friendId || typeof friendId !== "string" || friendId === currentUserId) {
           sendTo(currentUserId, {
             type: "error",
             message: "Invalid friendId",
@@ -128,7 +128,7 @@ wss.on("connection", (ws) => {
         if (!channels.has(channelId)) {
           channels.set(channelId, new Set());
         }
-        channels.get(channelId).add(currentUserId);
+        channels.get(channelId)!.add(currentUserId);
 
         // Check if friend is online
         const friendOnline = users.has(friendId);
@@ -144,7 +144,7 @@ wss.on("connection", (ws) => {
 
         // If friend is online, auto-subscribe them and notify
         if (friendOnline) {
-          channels.get(channelId).add(friendId);
+          channels.get(channelId)!.add(friendId);
           sendTo(friendId, {
             type: "channel_invite",
             channelId,
@@ -168,7 +168,7 @@ wss.on("connection", (ws) => {
           return;
         }
         const { channelId, text } = msg;
-        if (!channelId || !text) return;
+        if (!channelId || typeof channelId !== "string" || !text || typeof text !== "string") return;
 
         const members = channels.get(channelId);
         if (!members || !members.has(currentUserId)) {
@@ -197,7 +197,7 @@ wss.on("connection", (ws) => {
       case "typing": {
         if (!currentUserId) return;
         const { channelId: typingChannel } = msg;
-        if (!typingChannel) return;
+        if (!typingChannel || typeof typingChannel !== "string") return;
         broadcast(
           typingChannel,
           {
@@ -215,6 +215,7 @@ wss.on("connection", (ws) => {
       case "close_channel": {
         if (!currentUserId) return;
         const { channelId: closeChannel } = msg;
+        if (typeof closeChannel !== "string") return;
         const closeMembers = channels.get(closeChannel);
         if (closeMembers) {
           closeMembers.delete(currentUserId);
@@ -244,19 +245,32 @@ wss.on("connection", (ws) => {
           })
         );
     }
-  });
+  };
 
-  ws.on("close", () => {
+  ws.onclose = () => {
     if (currentUserId) {
       console.log(`[-] ${currentUserId} disconnected`);
       removeUserFromAllChannels(currentUserId);
       users.delete(currentUserId);
     }
-  });
+  };
 
-  ws.on("error", (err) => {
-    console.error(`[!] WebSocket error for ${currentUserId}:`, err.message);
-  });
+  ws.onerror = (err) => {
+    console.error(`[!] WebSocket error for ${currentUserId}:`, err);
+  };
+}
+
+// ── HTTP Server with WebSocket upgrade ──────────────────────────────────────
+Deno.serve({
+  port: PORT,
+  handler: (req) => {
+    if (req.headers.get("upgrade") === "websocket") {
+      const { socket, response } = Deno.upgradeWebSocket(req);
+      handleWebSocket(socket);
+      return response;
+    }
+    return new Response("Pester WebSocket Server", { status: 200 });
+  },
 });
 
 console.log(`🚀 Pester pub/sub broker running on ws://localhost:${PORT}`);
