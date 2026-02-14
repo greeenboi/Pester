@@ -7,7 +7,16 @@ import { MessageView } from "@/components/message-view";
 import { SettingsPage } from "@/components/settings-page";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Settings } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Menubar,
+  MenubarMenu,
+  MenubarTrigger,
+  MenubarContent,
+  MenubarItem,
+  MenubarSeparator,
+} from "@/components/ui/menubar";
+import { Settings, Users, MessageSquare } from "lucide-react";
 import {
   isPermissionGranted,
   requestPermission,
@@ -199,14 +208,19 @@ function App() {
     [openChannel]
   );
 
-  // ── Loading state ──────────────────────────────────────────────────────
+  // ── Loading state with skeleton ───────────────────────────────────────
   if (loading || status === "connecting" || status === "connected") {
     return (
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
         <Titlebar />
-        <div className="flex flex-col items-center justify-center flex-1 gap-3">
-          <Spinner className="size-5" />
-          <p className="text-xs text-muted-foreground">Connecting…</p>
+        <div className="flex flex-col flex-1 p-3 gap-2">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <div className="flex items-center justify-center flex-1">
+            <Spinner className="size-5" />
+          </div>
         </div>
       </div>
     );
@@ -239,14 +253,30 @@ function App() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       {page !== "settings" && page !== "chat" && (
         <Titlebar>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => setPage("settings")}
-            className="hover:bg-muted"
-          >
-            <Settings className="size-3" />
-          </Button>
+          <Menubar className="h-7 border-0 bg-transparent shadow-none p-0">
+            <MenubarMenu>
+              <MenubarTrigger className="h-6 px-2 text-xs data-[state=open]:bg-accent">
+                View
+              </MenubarTrigger>
+              <MenubarContent>
+                <MenubarItem onClick={() => setPage("contacts")}>
+                  <Users className="size-4" />
+                  Contacts
+                </MenubarItem>
+                {activeChannelId && (
+                  <MenubarItem onClick={() => setPage("chat")}>
+                    <MessageSquare className="size-4" />
+                    Active Chat
+                  </MenubarItem>
+                )}
+                <MenubarSeparator />
+                <MenubarItem onClick={() => setPage("settings")}>
+                  <Settings className="size-4" />
+                  Settings
+                </MenubarItem>
+              </MenubarContent>
+            </MenubarMenu>
+          </Menubar>
         </Titlebar>
       )}
 
