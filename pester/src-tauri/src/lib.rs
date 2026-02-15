@@ -207,13 +207,7 @@ pub fn run() {
                 tray.on_tray_icon_event(move |_tray, event| {
                     if let TrayIconEvent::Click { .. } = event {
                         if let Some(w) = handle_clone.get_webview_window("main") {
-                            if w.is_visible().unwrap_or(false) {
-                                let _ = w.hide();
-                            } else {
-                                let _ = w.unminimize();
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
+                            let _ = w.show();
                         }
                     }
                 });

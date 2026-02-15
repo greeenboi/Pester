@@ -24,6 +24,7 @@ export type ServerMessage =
   | { type: "message"; channelId: string; fromUserId: string; text: string; timestamp: number }
   | { type: "typing"; channelId: string; userId: string; timestamp: number }
   | { type: "user_left"; channelId: string; userId: string; timestamp: number }
+  | { type: "user_online"; channelId: string; userId: string; timestamp: number }
   | { type: "channel_closed"; channelId: string; timestamp: number }
   | { type: "error"; message: string };
 

@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as v from "valibot";
 import type { Channel, ChatMessage, ServerMessage } from "./types";
 import TauriWebSocket from "@tauri-apps/plugin-websocket";
 
-// const WS_URL = "wss://boiling-dotti-suvan-gs-f864ace7.koyeb.app";
 const WS_URL = "ws://localhost:4000";
+
+export const HTTP_URL = WS_URL.replace("wss://", "https://").replace("ws://", "http://");
+
+const MessageTextSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.nonEmpty("Message cannot be empty"),
+  v.maxLength(300, "Message must be 300 characters or less"),
+);
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "registered";
 
@@ -131,6 +140,17 @@ export function usePubSub() {
         });
         break;
 
+      case "user_online":
+        setChannels((prev) => {
+          const next = new Map(prev);
+          const channel = next.get(msg.channelId);
+          if (channel) {
+            next.set(msg.channelId, { ...channel, friendOnline: true });
+          }
+          return next;
+        });
+        break;
+
       case "channel_closed":
         setChannels((prev) => {
           const next = new Map(prev);
@@ -196,11 +216,14 @@ export function usePubSub() {
   const sendMessage = useCallback(
     (channelId: string, text: string) => {
       if (!userId) return;
-      send({ type: "message", channelId, text });
+      const result = v.safeParse(MessageTextSchema, text);
+      if (!result.success) return;
+      const validText = result.output;
+      send({ type: "message", channelId, text: validText });
       const chatMsg: ChatMessage = {
         id: `${userId}-${Date.now()}`,
         fromUserId: userId,
-        text,
+        text: validText,
         timestamp: Date.now(),
       };
       setChannels((prev) => {

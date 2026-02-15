@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import * as v from "valibot";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -19,6 +20,13 @@ import { ArrowLeft, Send, Check, Circle, Copy, Minus, X } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Channel, ChatMessage } from "@/lib/types";
+
+const MessageSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.nonEmpty("Message cannot be empty"),
+  v.maxLength(300, "Message must be 300 characters or less"),
+);
 
 interface MessageViewProps {
   channel: Channel;
@@ -46,12 +54,19 @@ export function MessageView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   });
 
+  const validationError = (() => {
+    if (!text.trim()) return null;
+    const result = v.safeParse(MessageSchema, text);
+    if (result.success) return null;
+    return result.issues[0]?.message ?? "Invalid message";
+  })();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = text.trim();
-    if (!trimmed) return;
+    const result = v.safeParse(MessageSchema, text);
+    if (!result.success) return;
 
-    onSendMessage(channel.channelId, trimmed);
+    onSendMessage(channel.channelId, result.output);
     setText("");
 
     // Show sent confirmation
@@ -195,7 +210,9 @@ export function MessageView({
           <InputGroupInput
             placeholder="Type a message…"
             value={text}
+            type="text"
             onChange={(e) => handleInput(e.target.value)}
+            maxLength={300}
             className="text-xs h-8"
             autoFocus
           />
@@ -204,12 +221,23 @@ export function MessageView({
               type="submit"
               size="icon-xs"
               variant="ghost"
-              disabled={!text.trim()}
+              disabled={!text.trim() || !!validationError}
             >
               <Send className="size-3.5" />
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
+        {validationError && (
+          <p className="text-[10px] text-destructive mt-1 px-1">{validationError}</p>
+        )}
+        {text.trim().length > 0 && (
+          <p className={cn(
+            "text-[10px] mt-0.5 px-1",
+            text.trim().length > 280 ? "text-destructive" : "text-muted-foreground"
+          )}>
+            {text.trim().length}/300
+          </p>
+        )}
       </form>
     </div>
   );

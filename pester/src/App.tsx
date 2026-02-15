@@ -25,6 +25,7 @@ import {
   addToRecent,
   loadShortcut,
 } from "@/lib/use-identity";
+import { HTTP_URL } from "@/lib/use-pubsub";
 import {
   register as registerShortcut,
 } from "@tauri-apps/plugin-global-shortcut";
@@ -172,8 +173,57 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels, userId, activeChannelId]);
 
-  // ── Online status tracking ──────────────────────────────────────────────
-  const onlineUsers = new Set<string>();
+  // ── Self-health-check: reconnect if server lost our session ──────────────
+  useEffect(() => {
+    if (!identity || loading || status !== "registered") return;
+
+    const checkSelf = async () => {
+      try {
+        const res = await fetch(`${HTTP_URL}/api/status?users=${identity}`);
+        const data: Record<string, boolean> = await res.json();
+        if (data[identity] === false) {
+          console.warn("[health] Server reports us as offline — reconnecting…");
+          await register(identity);
+        }
+      } catch {
+        // HTTP unreachable, skip this cycle
+      }
+    };
+
+    const interval = setInterval(checkSelf, 15_000); // every 15s
+    return () => clearInterval(interval);
+  }, [identity, loading, status, register]);
+
+  // ── Online status tracking (merged: WS events + HTTP polling) ────────────
+  const [httpOnlineUsers, setHttpOnlineUsers] = useState<Set<string>>(new Set());
+
+  // Poll online status via HTTP REST — independent of WebSocket connection
+  useEffect(() => {
+    if (contacts.length === 0 || loading) return;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `${HTTP_URL}/api/status?users=${contacts.join(",")}`
+        );
+        const data: Record<string, boolean> = await res.json();
+        const online = new Set<string>();
+        for (const [id, isOnline] of Object.entries(data)) {
+          if (isOnline) online.add(id);
+        }
+        setHttpOnlineUsers(online);
+      } catch {
+        // HTTP poll failed, keep existing state
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 10_000); // every 10s
+    return () => clearInterval(interval);
+  }, [contacts, loading]);
+
+  // Merge WS-based channel online info with HTTP-polled status
+  const onlineUsers = new Set<string>(httpOnlineUsers);
   for (const ch of channels.values()) {
     if (ch.friendOnline) onlineUsers.add(ch.friendId);
   }

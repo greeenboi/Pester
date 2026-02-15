@@ -47,7 +47,7 @@ export function SettingsPage({
   onBack,
 }: SettingsPageProps) {
   const [newContact, setNewContact] = useState("");
-  const [autostart, setAutostart] = useState(false);
+  const [autostart, setAutostart] = useState(true);
   const [copiedId, setCopiedId] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState<string | null>(null);
   const [shortcutLoading, setShortcutLoading] = useState(false);
