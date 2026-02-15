@@ -1,6 +1,6 @@
 {
   "name": "pester-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pester WebSocket Server with Socket.IO",
   "main": "index.js",
   "type": "module",
