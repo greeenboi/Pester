@@ -1,6 +1,14 @@
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { WebSocketServer } from "ws";
+import * as v from "valibot";
+
+const MessageTextSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.nonEmpty("Message cannot be empty"),
+  v.maxLength(300, "Message must be 300 characters or less"),
+);
 
 console.log("[System] Initializing Pester Server (Node.js)...");
 
@@ -11,6 +19,8 @@ const PORT = process.env.PORT || 4000;
 const users = new Map();
 /** channelId → Set<userId> */
 const channels = new Map();
+/** userId → Array<{ channelId, fromUserId, text, timestamp }> — messages buffered while offline */
+const offlineMessages = new Map();
 
 function makeChannelId(a, b) {
   return `chat_${[a, b].sort().join("_")}`;
@@ -35,7 +45,14 @@ function broadcast(channelId, message, excludeUserId = null) {
   if (!members) return;
   for (const uid of members) {
     if (uid === excludeUserId) continue;
-    sendTo(uid, message);
+    if (users.has(uid)) {
+      sendTo(uid, message);
+    } else if (message.type === "message") {
+      // Buffer chat messages for offline users
+      if (!offlineMessages.has(uid)) offlineMessages.set(uid, []);
+      offlineMessages.get(uid).push(message);
+      console.log(`[📦] Buffered message for offline user ${uid}`);
+    }
   }
 }
 
@@ -79,6 +96,41 @@ function handleIncomingMessage(msg, getCurrentUserId, setCurrentUserId, sendErro
       setCurrentUserId(userId);
       sendTo(userId, { type: "registered", userId, timestamp: Date.now() });
       console.log(`[+] ${userId} registered`);
+
+      // ── Re-join existing channels & notify peers ──────────────────────
+      for (const [channelId, members] of channels) {
+        if (members.has(userId)) {
+          // Find the other user in this channel
+          const friendId = [...members].find((m) => m !== userId);
+          if (friendId) {
+            // Notify this user about the channel they're still in
+            sendTo(userId, {
+              type: "channel_invite",
+              channelId,
+              fromUserId: friendId,
+              timestamp: Date.now(),
+            });
+            // Notify the other member that this user is now online
+            sendTo(friendId, {
+              type: "user_online",
+              channelId,
+              userId,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      }
+
+      // ── Deliver buffered offline messages ─────────────────────────────
+      const buffered = offlineMessages.get(userId);
+      if (buffered && buffered.length > 0) {
+        console.log(`[📬] Delivering ${buffered.length} buffered messages to ${userId}`);
+        for (const msg of buffered) {
+          sendTo(userId, msg);
+        }
+        offlineMessages.delete(userId);
+      }
+
       break;
     }
 
@@ -98,7 +150,9 @@ function handleIncomingMessage(msg, getCurrentUserId, setCurrentUserId, sendErro
       if (!channels.has(channelId)) {
         channels.set(channelId, new Set());
       }
+      // Always add both users to the channel
       channels.get(channelId).add(currentUserId);
+      channels.get(channelId).add(friendId);
 
       const friendOnline = users.has(friendId);
       sendTo(currentUserId, {
@@ -110,7 +164,6 @@ function handleIncomingMessage(msg, getCurrentUserId, setCurrentUserId, sendErro
       });
 
       if (friendOnline) {
-        channels.get(channelId).add(friendId);
         sendTo(friendId, {
           type: "channel_invite",
           channelId,
@@ -132,7 +185,15 @@ function handleIncomingMessage(msg, getCurrentUserId, setCurrentUserId, sendErro
         return;
       }
       const { channelId, text } = msg;
-      if (!channelId || typeof channelId !== "string" || !text || typeof text !== "string") return;
+      if (!channelId || typeof channelId !== "string") return;
+
+      // Validate message text with valibot
+      const textResult = v.safeParse(MessageTextSchema, text);
+      if (!textResult.success) {
+        const issue = textResult.issues[0]?.message ?? "Invalid message text";
+        sendTo(currentUserId, { type: "error", message: issue });
+        return;
+      }
 
       const members = channels.get(channelId);
       if (!members || !members.has(currentUserId)) {
@@ -146,7 +207,7 @@ function handleIncomingMessage(msg, getCurrentUserId, setCurrentUserId, sendErro
           type: "message",
           channelId,
           fromUserId: currentUserId,
-          text,
+          text: textResult.output,
           timestamp: Date.now(),
         },
         currentUserId
@@ -211,8 +272,117 @@ function handleDisconnect(currentUserId) {
   }
 }
 
-// ── HTTP Server ─────────────────────────────────────────────────────────────
+// ── HTTP Server (with REST API) ─────────────────────────────────────────────
 const httpServer = createServer((req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  // CORS headers for all API responses
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders);
+    res.end();
+    return;
+  }
+
+  // ── GET /api/status?users=id1,id2,... — check online status via HTTP ──
+  if (req.method === "GET" && url.pathname === "/api/status") {
+    const userIds = url.searchParams.get("users")?.split(",").filter(Boolean) || [];
+    const result = {};
+    for (const id of userIds) {
+      result[id] = users.has(id);
+    }
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  // ── GET /api/online — list all currently connected users ──────────────
+  if (req.method === "GET" && url.pathname === "/api/online") {
+    const onlineList = [...users.keys()];
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify({ count: onlineList.length, users: onlineList }));
+    return;
+  }
+
+  // ── POST /api/test-message — send a test message to a user ULID ──────
+  if (req.method === "POST" && url.pathname === "/api/test-message") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { targetUserId, text } = JSON.parse(body);
+        if (!targetUserId || typeof targetUserId !== "string") {
+          res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ error: "targetUserId is required" }));
+          return;
+        }
+
+        const messageText = text || `[Test] ping at ${new Date().toISOString()}`;
+        const testSenderId = "__server_test__";
+        const channelId = makeChannelId(testSenderId, targetUserId);
+
+        // Ensure channel exists
+        if (!channels.has(channelId)) {
+          channels.set(channelId, new Set([testSenderId, targetUserId]));
+        } else {
+          channels.get(channelId).add(testSenderId);
+          channels.get(channelId).add(targetUserId);
+        }
+
+        const online = users.has(targetUserId);
+        const message = {
+          type: "message",
+          channelId,
+          fromUserId: testSenderId,
+          text: messageText,
+          timestamp: Date.now(),
+        };
+
+        if (online) {
+          // Also send channel_invite so the client creates the channel entry
+          sendTo(targetUserId, {
+            type: "channel_invite",
+            channelId,
+            fromUserId: testSenderId,
+            timestamp: Date.now(),
+          });
+          sendTo(targetUserId, message);
+          res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ ok: true, delivered: true, message: messageText }));
+        } else {
+          // Buffer for when they come online
+          if (!offlineMessages.has(targetUserId)) offlineMessages.set(targetUserId, []);
+          offlineMessages.get(targetUserId).push(message);
+          res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+          res.end(JSON.stringify({ ok: true, delivered: false, buffered: true, message: messageText }));
+        }
+        console.log(`[🧪] Test message → ${targetUserId} (${online ? "delivered" : "buffered"})`);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders });
+        res.end(JSON.stringify({ error: "Invalid JSON body" }));
+      }
+    });
+    return;
+  }
+
+  // ── GET /api/channels — debug: list active channels ───────────────────
+  if (req.method === "GET" && url.pathname === "/api/channels") {
+    const result = {};
+    for (const [channelId, members] of channels) {
+      result[channelId] = [...members];
+    }
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  // Default / health
   res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("Pester WebSocket Server");
 });

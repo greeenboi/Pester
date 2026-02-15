@@ -8,13 +8,20 @@
     "dev": "node --watch index.js",
     "start": "node index.js",
     "build": "echo 'No build step required for JavaScript server'",
-    "test": "node --test"
+    "test": "node --test",
+    "test-client": "node test-client.js"
   },
-  "keywords": ["websocket", "socketio", "chat", "pubsub"],
+  "keywords": [
+    "websocket",
+    "socketio",
+    "chat",
+    "pubsub"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "socket.io": "^4.7.5",
+    "valibot": "^1.2.0",
     "ws": "^8.17.0"
   },
   "engines": {
