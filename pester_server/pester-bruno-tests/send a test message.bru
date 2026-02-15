@@ -1,0 +1,23 @@
+meta {
+  name: send a test message
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://localhost:4000/api/test-message
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "targetUserId": "01KHDNB81B4E0Y91HBGJJNH64Q", 
+    "text": "Hello!"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
