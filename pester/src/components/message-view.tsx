@@ -16,10 +16,10 @@ import {
   ItemSeparator,
 } from "@/components/ui/item";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Send, Check, Circle, Copy, Minus, X } from "lucide-react";
+import { ArrowLeft, Send, Check, Copy, Minus, X } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Channel, ChatMessage } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 
 const MessageSchema = v.pipe(
   v.string(),
@@ -29,16 +29,18 @@ const MessageSchema = v.pipe(
 );
 
 interface MessageViewProps {
-  channel: Channel;
+  friendId: string;
+  messages: ChatMessage[];
   userId: string;
   typingUsers: Map<string, number>;
-  onSendMessage: (channelId: string, text: string) => void;
-  onSendTyping: (channelId: string) => void;
+  onSendMessage: (targetUserId: string, text: string) => void;
+  onSendTyping: (targetUserId: string) => void;
   onBack: () => void;
 }
 
 export function MessageView({
-  channel,
+  friendId,
+  messages,
   userId,
   typingUsers,
   onSendMessage,
@@ -66,7 +68,7 @@ export function MessageView({
     const result = v.safeParse(MessageSchema, text);
     if (!result.success) return;
 
-    onSendMessage(channel.channelId, result.output);
+    onSendMessage(friendId, result.output);
     setText("");
 
     // Show sent confirmation
@@ -80,7 +82,7 @@ export function MessageView({
     const now = Date.now();
     if (now - typingThrottle.current > 1000) {
       typingThrottle.current = now;
-      onSendTyping(channel.channelId);
+      onSendTyping(friendId);
     }
   };
 
@@ -92,7 +94,7 @@ export function MessageView({
     }
   };
 
-  const friendTyping = typingUsers.has(channel.friendId);
+  const friendTyping = typingUsers.has(friendId);
 
   return (
     <div className="flex flex-col h-full">
@@ -101,19 +103,8 @@ export function MessageView({
         <Button variant="ghost" size="icon-xs" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
         </Button>
-        <Circle
-          className={cn(
-            "size-2",
-            channel.friendOnline
-              ? "fill-green-500 text-green-500"
-              : "fill-muted-foreground/30 text-muted-foreground/30"
-          )}
-        />
         <div className="flex flex-col min-w-0 flex-1 pointer-events-none">
-          <span className="text-xs font-medium truncate">{channel.friendId}</span>
-          <span className="text-[10px] text-muted-foreground leading-none">
-            {channel.friendOnline ? "online" : "offline"}
-          </span>
+          <span className="text-xs font-medium truncate">{friendId}</span>
         </div>
         <div className="flex items-center gap-0.5">
           <Button variant="ghost" size="icon-xs" onClick={() => getCurrentWindow().minimize()} className="hover:bg-muted">
@@ -127,7 +118,7 @@ export function MessageView({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
-        {channel.messages.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-xs text-muted-foreground">
               Send a message to start chatting
@@ -135,7 +126,7 @@ export function MessageView({
           </div>
         ) : (
           <ItemGroup className="py-1">
-            {channel.messages.map((msg, i) => {
+            {messages.map((msg, i) => {
               const isMe = msg.fromUserId === userId;
               return (
                 <div key={msg.id}>
@@ -186,7 +177,7 @@ export function MessageView({
         {friendTyping && (
           <div className="px-3 py-1">
             <span className="text-[10px] text-muted-foreground italic">
-              {channel.friendId} is typing…
+              {friendId} is typing…
             </span>
           </div>
         )}

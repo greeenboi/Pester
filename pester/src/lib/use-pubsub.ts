@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as v from "valibot";
-import type { Channel, ChatMessage, ServerMessage } from "./types";
+import type { Conversation, ChatMessage, ServerMessage } from "./types";
 import TauriWebSocket from "@tauri-apps/plugin-websocket";
 
 const WS_URL = "ws://localhost:4000";
-
-export const HTTP_URL = WS_URL.replace("wss://", "https://").replace("ws://", "http://");
 
 const MessageTextSchema = v.pipe(
   v.string(),
@@ -20,12 +18,18 @@ export function usePubSub() {
   const wsRef = useRef<TauriWebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [userId, setUserId] = useState<string | null>(null);
-  const [channels, setChannels] = useState<Map<string, Channel>>(new Map());
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Map<string, Conversation>>(new Map());
+  const [activeFriendId, setActiveFriendId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<Map<string, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const userIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync for use inside WS listener closure
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
 
   // ── Send helper ───────────────────────────────────────────────────────────
   const send = useCallback((msg: object) => {
@@ -35,51 +39,28 @@ export function usePubSub() {
     }
   }, []);
 
+  // ── Ensure a conversation exists for a given friendId ─────────────────────
+  const ensureConversation = useCallback((friendId: string) => {
+    setConversations((prev) => {
+      if (prev.has(friendId)) return prev;
+      const next = new Map(prev);
+      next.set(friendId, { friendId, messages: [] });
+      return next;
+    });
+  }, []);
+
   // ── Message handler ──────────────────────────────────────────────────────
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
       case "registered":
         setUserId(msg.userId);
         setStatus("registered");
-        setChannels(new Map());
-        setActiveChannelId(null);
         break;
 
       case "kicked":
         setError(msg.message);
         setStatus("disconnected");
         setUserId(null);
-        break;
-
-      case "channel_opened":
-        setChannels((prev) => {
-          const next = new Map(prev);
-          if (!next.has(msg.channelId)) {
-            next.set(msg.channelId, {
-              channelId: msg.channelId,
-              friendId: msg.friendId,
-              friendOnline: msg.friendOnline,
-              messages: [],
-            });
-          }
-          return next;
-        });
-        setActiveChannelId(msg.channelId);
-        break;
-
-      case "channel_invite":
-        setChannels((prev) => {
-          const next = new Map(prev);
-          if (!next.has(msg.channelId)) {
-            next.set(msg.channelId, {
-              channelId: msg.channelId,
-              friendId: msg.fromUserId,
-              friendOnline: true,
-              messages: [],
-            });
-          }
-          return next;
-        });
         break;
 
       case "message": {
@@ -89,13 +70,19 @@ export function usePubSub() {
           text: msg.text,
           timestamp: msg.timestamp,
         };
-        setChannels((prev) => {
+        setConversations((prev) => {
           const next = new Map(prev);
-          const channel = next.get(msg.channelId);
-          if (channel) {
-            next.set(msg.channelId, {
-              ...channel,
-              messages: [...channel.messages, chatMsg],
+          const existing = next.get(msg.fromUserId);
+          if (existing) {
+            next.set(msg.fromUserId, {
+              ...existing,
+              messages: [...existing.messages, chatMsg],
+            });
+          } else {
+            // Auto-create conversation for incoming messages
+            next.set(msg.fromUserId, {
+              friendId: msg.fromUserId,
+              messages: [chatMsg],
             });
           }
           return next;
@@ -111,17 +98,17 @@ export function usePubSub() {
       case "typing": {
         setTypingUsers((prev) => {
           const next = new Map(prev);
-          next.set(msg.userId, msg.timestamp);
+          next.set(msg.fromUserId, msg.timestamp);
           return next;
         });
-        const existing = typingTimersRef.current.get(msg.userId);
+        const existing = typingTimersRef.current.get(msg.fromUserId);
         if (existing) clearTimeout(existing);
         typingTimersRef.current.set(
-          msg.userId,
+          msg.fromUserId,
           setTimeout(() => {
             setTypingUsers((prev) => {
               const next = new Map(prev);
-              next.delete(msg.userId);
+              next.delete(msg.fromUserId);
               return next;
             });
           }, 3000)
@@ -129,44 +116,13 @@ export function usePubSub() {
         break;
       }
 
-      case "user_left":
-        setChannels((prev) => {
-          const next = new Map(prev);
-          const channel = next.get(msg.channelId);
-          if (channel) {
-            next.set(msg.channelId, { ...channel, friendOnline: false });
-          }
-          return next;
-        });
-        break;
-
-      case "user_online":
-        setChannels((prev) => {
-          const next = new Map(prev);
-          const channel = next.get(msg.channelId);
-          if (channel) {
-            next.set(msg.channelId, { ...channel, friendOnline: true });
-          }
-          return next;
-        });
-        break;
-
-      case "channel_closed":
-        setChannels((prev) => {
-          const next = new Map(prev);
-          next.delete(msg.channelId);
-          return next;
-        });
-        setActiveChannelId((prev) => (prev === msg.channelId ? null : prev));
-        break;
-
       case "error":
         setError(msg.message);
         break;
     }
   }, []);
 
-  // ── Register (connect + identify) ────────────────────────────────────────
+  // ── Register (connect + subscribe) ───────────────────────────────────────
   const register = useCallback(async (id: string) => {
     if (wsRef.current) {
       await wsRef.current.disconnect();
@@ -181,7 +137,6 @@ export function usePubSub() {
       setStatus("connected");
 
       ws.addListener((rawMsg) => {
-        // Tauri WS plugin sends { type: "Text", data: "..." } or { type: "Close", ... }
         if (typeof rawMsg === "object" && rawMsg !== null) {
           const envelope = rawMsg as { type?: string; data?: string };
           if (envelope.type === "Text" && envelope.data) {
@@ -194,6 +149,12 @@ export function usePubSub() {
           } else if (envelope.type === "Close") {
             setStatus("disconnected");
             wsRef.current = null;
+            // Auto-reconnect after a short delay
+            setTimeout(() => {
+              if (userIdRef.current) {
+                register(userIdRef.current);
+              }
+            }, 3000);
           }
         }
       });
@@ -206,33 +167,34 @@ export function usePubSub() {
   }, [handleMessage]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
-  const openChannel = useCallback(
-    (friendId: string) => {
-      send({ type: "open_channel", friendId });
-    },
-    [send]
-  );
-
   const sendMessage = useCallback(
-    (channelId: string, text: string) => {
+    (targetUserId: string, text: string) => {
       if (!userId) return;
       const result = v.safeParse(MessageTextSchema, text);
       if (!result.success) return;
       const validText = result.output;
-      send({ type: "message", channelId, text: validText });
+
+      send({ type: "message", targetUserId, text: validText });
+
+      // Append to local conversation
       const chatMsg: ChatMessage = {
         id: `${userId}-${Date.now()}`,
         fromUserId: userId,
         text: validText,
         timestamp: Date.now(),
       };
-      setChannels((prev) => {
+      setConversations((prev) => {
         const next = new Map(prev);
-        const channel = next.get(channelId);
-        if (channel) {
-          next.set(channelId, {
-            ...channel,
-            messages: [...channel.messages, chatMsg],
+        const existing = next.get(targetUserId);
+        if (existing) {
+          next.set(targetUserId, {
+            ...existing,
+            messages: [...existing.messages, chatMsg],
+          });
+        } else {
+          next.set(targetUserId, {
+            friendId: targetUserId,
+            messages: [chatMsg],
           });
         }
         return next;
@@ -242,21 +204,8 @@ export function usePubSub() {
   );
 
   const sendTyping = useCallback(
-    (channelId: string) => {
-      send({ type: "typing", channelId });
-    },
-    [send]
-  );
-
-  const closeChannel = useCallback(
-    (channelId: string) => {
-      send({ type: "close_channel", channelId });
-      setChannels((prev) => {
-        const next = new Map(prev);
-        next.delete(channelId);
-        return next;
-      });
-      setActiveChannelId((prev) => (prev === channelId ? null : prev));
+    (targetUserId: string) => {
+      send({ type: "typing", targetUserId });
     },
     [send]
   );
@@ -266,8 +215,8 @@ export function usePubSub() {
       await wsRef.current.disconnect();
     }
     setUserId(null);
-    setChannels(new Map());
-    setActiveChannelId(null);
+    setConversations(new Map());
+    setActiveFriendId(null);
     setStatus("disconnected");
   }, []);
 
@@ -284,17 +233,16 @@ export function usePubSub() {
   return {
     status,
     userId,
-    channels,
-    activeChannelId,
-    setActiveChannelId,
+    conversations,
+    activeFriendId,
+    setActiveFriendId,
     typingUsers,
     error,
     setError,
     register,
-    openChannel,
+    ensureConversation,
     sendMessage,
     sendTyping,
-    closeChannel,
     disconnect,
   };
 }

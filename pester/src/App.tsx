@@ -25,7 +25,6 @@ import {
   addToRecent,
   loadShortcut,
 } from "@/lib/use-identity";
-import { HTTP_URL } from "@/lib/use-pubsub";
 import {
   register as registerShortcut,
 } from "@tauri-apps/plugin-global-shortcut";
@@ -37,13 +36,13 @@ function App() {
   const {
     status,
     userId,
-    channels,
-    activeChannelId,
-    setActiveChannelId,
+    conversations,
+    activeFriendId,
+    setActiveFriendId,
     typingUsers,
     error,
     register,
-    openChannel,
+    ensureConversation,
     sendMessage,
     sendTyping,
   } = usePubSub();
@@ -133,14 +132,15 @@ function App() {
           if (prev.includes(contactId)) return prev;
           return [...prev, contactId];
         });
-        openChannel(contactId);
+        ensureConversation(contactId);
+        setActiveFriendId(contactId);
         setPage("chat");
       }
     });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [openChannel]);
+  }, [ensureConversation, setActiveFriendId]);
 
   // ── Notification for incoming messages ──────────────────────────────────
   useEffect(() => {
@@ -157,13 +157,13 @@ function App() {
       }
     };
 
-    for (const channel of channels.values()) {
-      const msgs = channel.messages;
+    for (const conv of conversations.values()) {
+      const msgs = conv.messages;
       if (msgs.length > 0) {
         const last = msgs[msgs.length - 1];
         if (
           last.fromUserId !== userId &&
-          channel.channelId !== activeChannelId &&
+          conv.friendId !== activeFriendId &&
           Date.now() - last.timestamp < 2000
         ) {
           notify(last.fromUserId, last.text);
@@ -171,62 +171,7 @@ function App() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels, userId, activeChannelId]);
-
-  // ── Self-health-check: reconnect if server lost our session ──────────────
-  useEffect(() => {
-    if (!identity || loading || status !== "registered") return;
-
-    const checkSelf = async () => {
-      try {
-        const res = await fetch(`${HTTP_URL}/api/status?users=${identity}`);
-        const data: Record<string, boolean> = await res.json();
-        if (data[identity] === false) {
-          console.warn("[health] Server reports us as offline — reconnecting…");
-          await register(identity);
-        }
-      } catch {
-        // HTTP unreachable, skip this cycle
-      }
-    };
-
-    const interval = setInterval(checkSelf, 15_000); // every 15s
-    return () => clearInterval(interval);
-  }, [identity, loading, status, register]);
-
-  // ── Online status tracking (merged: WS events + HTTP polling) ────────────
-  const [httpOnlineUsers, setHttpOnlineUsers] = useState<Set<string>>(new Set());
-
-  // Poll online status via HTTP REST — independent of WebSocket connection
-  useEffect(() => {
-    if (contacts.length === 0 || loading) return;
-
-    const checkStatus = async () => {
-      try {
-        const res = await fetch(
-          `${HTTP_URL}/api/status?users=${contacts.join(",")}`
-        );
-        const data: Record<string, boolean> = await res.json();
-        const online = new Set<string>();
-        for (const [id, isOnline] of Object.entries(data)) {
-          if (isOnline) online.add(id);
-        }
-        setHttpOnlineUsers(online);
-      } catch {
-        // HTTP poll failed, keep existing state
-      }
-    };
-
-    checkStatus();
-    const interval = setInterval(checkStatus, 10_000); // every 10s
-    return () => clearInterval(interval);
-  }, [contacts, loading]);
-
-  // Merge WS-based channel online info with HTTP-polled status
-  const onlineUsers = new Set<string>(httpOnlineUsers);
-  for (const ch of channels.values()) {
-    if (ch.friendOnline) onlineUsers.add(ch.friendId);
-  }
+  }, [conversations, userId, activeFriendId]);
 
   // ── Contact actions ─────────────────────────────────────────────────────
   const addContact = useCallback((id: string) => {
@@ -240,14 +185,15 @@ function App() {
     setContacts((prev) => prev.filter((c) => c !== id));
   }, []);
 
-  // ── Select contact → open channel + navigate to chat ───────────────────
+  // ── Select contact → navigate to chat ──────────────────────────────────
   const handleSelectContact = useCallback(
     (contactId: string) => {
-      openChannel(contactId);
+      ensureConversation(contactId);
+      setActiveFriendId(contactId);
       setRecentChats((prev) => addToRecent(prev, contactId));
       setPage("chat");
     },
-    [openChannel]
+    [ensureConversation, setActiveFriendId]
   );
 
   // ── Loading state with skeleton ───────────────────────────────────────
@@ -287,8 +233,8 @@ function App() {
     );
   }
 
-  const activeChannel = activeChannelId
-    ? channels.get(activeChannelId)
+  const activeConversation = activeFriendId
+    ? conversations.get(activeFriendId)
     : undefined;
 
   return (
@@ -309,26 +255,26 @@ function App() {
       {page === "contacts" && (
         <ContactsList
           contacts={contacts}
-          onlineUsers={onlineUsers}
           onSelectContact={handleSelectContact}
         />
       )}
 
-      {page === "chat" && activeChannel && (
+      {page === "chat" && activeFriendId && (
         <MessageView
-          channel={activeChannel}
+          friendId={activeFriendId}
+          messages={activeConversation?.messages ?? []}
           userId={userId ?? ""}
           typingUsers={typingUsers}
           onSendMessage={sendMessage}
           onSendTyping={sendTyping}
           onBack={() => {
-            setActiveChannelId(null);
+            setActiveFriendId(null);
             setPage("contacts");
           }}
         />
       )}
 
-      {page === "chat" && !activeChannel && (
+      {page === "chat" && !activeFriendId && (
         <div className="flex items-center justify-center h-full">
           <Button
             variant="ghost"
