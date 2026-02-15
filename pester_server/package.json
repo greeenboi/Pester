@@ -17,7 +17,11 @@
     "chat",
     "pubsub"
   ],
-  "author": "",
+  "author": "Suvan Gowri Shanker <suvan.gowrishanker.204@gmail.com>",
+  "homepage": "https://github.com/greeenboi/Pester",
+  "bugs": {
+    "url": "https://github.com/greeenboi/Pester/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "socket.io": "^4.7.5",
