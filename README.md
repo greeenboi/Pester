@@ -49,7 +49,16 @@ Pester is designed around the idea that not everything needs to be saved.
 *(If you want something that archives everything, this is probably not it — that’s the point.)*
 
 ---
+## Environment variables guide
 
+> [!IMPORTANT]
+> We only have one Environment variable (kind of) .
+> Replace [this variable](https://github.com/greeenboi/Pester/blob/master/pester/src/lib/use-pubsub.ts#L6) with your deployed server ( or localhost port )
+>
+> Due to constraints across platforms, traditional env variables might not be shipped right so we do it this way.
+
+
+---
 ## Deploy Server
 
 [![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?name=pester&type=git&repository=greeenboi%2FPester&branch=master&workdir=pester_server&builder=[...])
@@ -62,6 +71,7 @@ Feel free to use the binary in the releases.
 
 > [!NOTE]
 > The Windows binary in the releases is using my deployment so you will be limited by who else is using that particular binary.
+> 
 > if you wish to host your own server instance (for free) you can click on the koyeb button above, and build your own binary.
 
 You can also build your own binary (installer that you can share) on your windows system:
