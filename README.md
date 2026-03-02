@@ -6,7 +6,15 @@
 
 ---
 
-# <img width="auto" height="38" alt="logo" src="https://github.com/greeenboi/Pester/blob/master/pester/public/pester.png" /> Pester
+# <img width="auto" height="38" alt="logo" src="https://github.com/greeenboi/Pester/blob/master/pester/public/pester.png" /> Pester 
+
+<a href="https://peerlist.io/greeenboi/project/pester" target="_blank" rel="noreferrer">
+  <img
+    src="https://peerlist.io/api/v1/projects/embed/PRJH8OEO8EPNGJGLGCDRJPAPBBPMQ6?showUpvote=false&theme=dark"
+    alt="Pester"
+    style="width: auto; height: 72px;"
+  />
+</a>
 
 ![Tauri](https://img.shields.io/badge/tauri-%2324C8DB.svg?style=for-the-badge&logo=tauri&logoColor=%23FFFFFF)
 ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
